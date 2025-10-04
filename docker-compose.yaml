@@ -1,0 +1,59 @@
+version: '3.9'
+
+volumes:
+  db-data:
+
+services:
+  db:
+    container_name: db-access
+    image: postgres:14.2
+#    ports:
+#      - 5432:5432
+    expose:
+      - 5432
+    volumes:
+      - db-data:/var/lib/postgresql/data/
+    environment:
+      POSTGRES_USER: "${POSTGRES_USER}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+      POSTGRES_DB: "${POSTGRES_DB}"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -d ${POSTGRES_DB} -U ${POSTGRES_USER}" ]
+      interval: 5s
+      timeout: 3s
+      retries: 6
+    networks:
+        - access-core-net
+
+  backend:
+    container_name: backend-access
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+#    expose:
+#      - 8080
+    environment:
+      POSTGRES_USER: "${POSTGRES_USER}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+      POSTGRES_DB: "${POSTGRES_DB}"
+#    volumes:
+#      - ./media:/media
+    build:
+      context: backend
+    command: bash -c "
+      python manage.py migrate
+      && python manage.py collectstatic --noinput
+      && python manage.py create_test_roles
+      && python manage.py create_test_users
+      && python manage.py create_test_data
+      && gunicorn config.wsgi -b 0.0.0.0:8000
+      "
+    networks:
+        - access-core-net
+
+
+networks:
+    access-core-net:
+        driver: bridge
